@@ -115,10 +115,6 @@ function getColumnLetter(columnNumber) {
   return out
 }
 
-function isNoticeOfAllowanceLabel(label) {
-  return /notice\s+of\s+allowance/i.test(label || '')
-}
-
 export default function ActionsOverlay({ sheetName }) {
   const { workbook, setCell } = useWorkbookStore((state) => ({
     workbook: state.workbook,
@@ -138,7 +134,7 @@ export default function ActionsOverlay({ sheetName }) {
 
   const visibleSections = actionsSections.filter((section) => {
     if (section.key !== 'continuation') return true
-    return isNoticeOfAllowanceLabel(selectedStage?.label) || showContinuationForAll
+    return showContinuationForAll
   })
 
   const updateRowValue = (row, nextValue, rating = null) => {
@@ -238,16 +234,14 @@ export default function ActionsOverlay({ sheetName }) {
           </div>
         </div>
 
-        {!isNoticeOfAllowanceLabel(selectedStage?.label) && (
-          <label className="flex items-center gap-2 text-sm text-slate-300">
-            <input
-              type="checkbox"
-              checked={showContinuationForAll}
-              onChange={(event) => setShowContinuationForAll(event.target.checked)}
-            />
-            Show continuation proposal for this stage
-          </label>
-        )}
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={showContinuationForAll}
+            onChange={(event) => setShowContinuationForAll(event.target.checked)}
+          />
+          Show continuation proposal for this stage
+        </label>
 
         {visibleSections.map((section) => (
           <div id={`section-${section.key}`} key={section.key} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 shadow-soft">
