@@ -187,6 +187,7 @@ export default function ActionsOverlay({ sheetName }) {
 
   const [stageKey, setStageKey] = useState(stageOptions[0]?.key ?? DEFAULT_STAGES[0].key)
   const [showContinuationForAll, setShowContinuationForAll] = useState(false)
+  const [showUsptoToolsForAllLongFields, setShowUsptoToolsForAllLongFields] = useState(false)
   const [copyFromStageKey, setCopyFromStageKey] = useState(stageOptions[0]?.key ?? DEFAULT_STAGES[0].key)
   const [richDraftByA1, setRichDraftByA1] = useState({})
   const editorRefs = useRef({})
@@ -200,7 +201,7 @@ export default function ActionsOverlay({ sheetName }) {
     return showContinuationForAll
   })
 
-  const updateRowValue = (row, nextValue, rating = null, rowLabel = '') => {
+  const updateRowValue = (row, nextValue, rating = null, rowLabel = '', useUsptoMarkup = false) => {
     const a1 = `${stageColumn}${row}`
     if (TRIAD_SET.has(row)) {
       const current = ws ? getCellByA1(ws, a1) : ''
@@ -226,7 +227,7 @@ export default function ActionsOverlay({ sheetName }) {
       return
     }
 
-    if (isBroadestClaimField(rowLabel, row)) {
+    if (isBroadestClaimField(rowLabel, row) || useUsptoMarkup) {
       const parsedMarkup = parseUsptoMarkup(nextValue)
       setCell(sheetName, a1, parsedMarkup.plainText, { richTextRuns: parsedMarkup.runs })
       return
@@ -250,9 +251,9 @@ export default function ActionsOverlay({ sheetName }) {
     return rawValue == null ? '' : String(rawValue)
   }
 
-  const commitBroadestDraft = (row, rowLabel, a1, draftValue) => {
+  const commitBroadestDraft = (row, rowLabel, a1, draftValue, useUsptoMarkup = false) => {
     setRichDraftByA1((prev) => ({ ...prev, [a1]: draftValue }))
-    updateRowValue(row, draftValue, null, rowLabel)
+    updateRowValue(row, draftValue, null, rowLabel, useUsptoMarkup)
   }
 
   const applyWrapperToBroadest = (row, rowLabel, a1, openMark, closeMark = openMark) => {
@@ -263,7 +264,7 @@ export default function ActionsOverlay({ sheetName }) {
     const selected = current.slice(start, end)
     const wrapped = `${openMark}${selected}${closeMark}`
     const nextValue = `${current.slice(0, start)}${wrapped}${current.slice(end)}`
-    commitBroadestDraft(row, rowLabel, a1, nextValue)
+    commitBroadestDraft(row, rowLabel, a1, nextValue, true)
 
     const nextCursorStart = start + openMark.length
     const nextCursorEnd = nextCursorStart + selected.length
@@ -281,7 +282,7 @@ export default function ActionsOverlay({ sheetName }) {
     const start = el?.selectionStart ?? current.length
     const end = el?.selectionEnd ?? current.length
     const nextValue = `${current.slice(0, start)}${token}${current.slice(end)}`
-    commitBroadestDraft(row, rowLabel, a1, nextValue)
+    commitBroadestDraft(row, rowLabel, a1, nextValue, true)
 
     const nextCursor = start + token.length
     requestAnimationFrame(() => {
@@ -370,6 +371,15 @@ export default function ActionsOverlay({ sheetName }) {
           Show continuation proposal for this stage
         </label>
 
+        <label className="flex items-center gap-2 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            checked={showUsptoToolsForAllLongFields}
+            onChange={(event) => setShowUsptoToolsForAllLongFields(event.target.checked)}
+          />
+          Show USPTO tools on all long fields
+        </label>
+
         {visibleSections.map((section) => (
           <div id={`section-${section.key}`} key={section.key} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 shadow-soft">
             <h3 className="mb-3 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-['Sora'] text-sm font-semibold uppercase tracking-wide text-slate-200">
@@ -384,9 +394,10 @@ export default function ActionsOverlay({ sheetName }) {
                 const parsed = TRIAD_SET.has(row) ? parseRatingText(rawValue) : null
                 const kind = inputKindForRow(row)
                 const isBroadestClaim = isBroadestClaimField(label, row)
+                const showUsptoToolbar = kind === 'long' && (isBroadestClaim || showUsptoToolsForAllLongFields)
                 const baseValue = parsed
                   ? parsed.text
-                  : isBroadestClaim
+                  : showUsptoToolbar
                     ? getBroadestDraftValue(a1, rawValue)
                     : rawValue == null
                       ? ''
@@ -430,7 +441,7 @@ export default function ActionsOverlay({ sheetName }) {
 
                     {kind === 'long' ? (
                       <>
-                        {isBroadestClaim && (
+                        {showUsptoToolbar && (
                           <div className="mb-2 flex flex-wrap gap-2">
                             <button
                               type="button"
@@ -487,19 +498,19 @@ export default function ActionsOverlay({ sheetName }) {
                         <textarea
                           value={baseValue}
                           onChange={(event) => {
-                            if (isBroadestClaim) {
-                              commitBroadestDraft(row, label, a1, event.target.value)
+                            if (showUsptoToolbar) {
+                              commitBroadestDraft(row, label, a1, event.target.value, true)
                               return
                             }
                             updateRowValue(row, event.target.value, null, label)
                           }}
                           rows={6}
                           ref={(el) => {
-                            if (isBroadestClaim) editorRefs.current[a1] = el
+                            if (showUsptoToolbar) editorRefs.current[a1] = el
                           }}
                           className="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100"
                         />
-                        {isBroadestClaim && (
+                        {showUsptoToolbar && (
                           <p className="mt-2 text-[11px] text-slate-400">
                             USPTO markup: <code>__underline__</code>, <code>~~strikethrough~~</code>, <code>**bold**</code>, and <code>[brackets]</code> for deleted matter.
                           </p>
