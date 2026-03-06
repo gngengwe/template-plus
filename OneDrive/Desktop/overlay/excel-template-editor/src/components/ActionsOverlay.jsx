@@ -121,13 +121,13 @@ function getColumnLetter(columnNumber) {
   return out
 }
 
-function isClaimRelatedField(label, row) {
+function isUsptoMarkupField(label, row) {
   const text = String(label || '').toLowerCase()
-  if (text.includes('claim')) {
-    return true
-  }
+  const broadestClaim = /broadest.*claim|claim.*broadest/i.test(text)
+  const attorneyInsertClaims = /attorney.*insert.*claims?|insert.*claims?.*attorney/i.test(text)
+  if (broadestClaim || attorneyInsertClaims) return true
   // Template fallback: broadest-claim prompt is typically row 6 in Actions.
-  return Number(row) === 6
+  return Number(row) === 6 && text.includes('claim')
 }
 
 function parseUsptoMarkup(value) {
@@ -289,7 +289,7 @@ export default function ActionsOverlay({ sheetName }) {
       return
     }
 
-    if (isClaimRelatedField(rowLabel, row) || useUsptoMarkup) {
+    if (isUsptoMarkupField(rowLabel, row) || useUsptoMarkup) {
       const parsedMarkup = parseUsptoMarkup(nextValue)
       setCell(sheetName, a1, parsedMarkup.plainText, { richTextRuns: parsedMarkup.runs })
       return
@@ -335,23 +335,6 @@ export default function ActionsOverlay({ sheetName }) {
       if (!nextEl) return
       nextEl.focus()
       nextEl.setSelectionRange(nextCursorStart, nextCursorEnd)
-    })
-  }
-
-  const insertTokenInBroadest = (row, rowLabel, a1, token) => {
-    const el = editorRefs.current[a1]
-    const current = getBroadestDraftValue(a1, ws ? getCellByA1(ws, a1) : '')
-    const start = el?.selectionStart ?? current.length
-    const end = el?.selectionEnd ?? current.length
-    const nextValue = `${current.slice(0, start)}${token}${current.slice(end)}`
-    commitBroadestDraft(row, rowLabel, a1, nextValue, true)
-
-    const nextCursor = start + token.length
-    requestAnimationFrame(() => {
-      const nextEl = editorRefs.current[a1]
-      if (!nextEl) return
-      nextEl.focus()
-      nextEl.setSelectionRange(nextCursor, nextCursor)
     })
   }
 
@@ -502,8 +485,8 @@ export default function ActionsOverlay({ sheetName }) {
                 const rawValue = ws ? getCellByA1(ws, a1) : ''
                 const parsed = TRIAD_SET.has(row) ? parseRatingText(rawValue) : null
                 const kind = inputKindForRow(row)
-                const isClaimRelated = isClaimRelatedField(label, row)
-                const showUsptoToolbar = kind === 'long' && isClaimRelated
+                const isUsptoField = isUsptoMarkupField(label, row)
+                const showUsptoToolbar = kind === 'long' && isUsptoField
                 const baseValue = parsed
                   ? parsed.text
                   : showUsptoToolbar
@@ -579,27 +562,6 @@ export default function ActionsOverlay({ sheetName }) {
                               className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600"
                             >
                               Brackets
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => insertTokenInBroadest(row, label, a1, '[AMENDED] ')}
-                              className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600"
-                            >
-                              [AMENDED]
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => insertTokenInBroadest(row, label, a1, '[CANCELED] ')}
-                              className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600"
-                            >
-                              [CANCELED]
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => insertTokenInBroadest(row, label, a1, '[NEW] ')}
-                              className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-100 hover:bg-slate-600"
-                            >
-                              [NEW]
                             </button>
                           </div>
                         )}
