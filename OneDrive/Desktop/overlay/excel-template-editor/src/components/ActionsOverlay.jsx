@@ -176,6 +176,69 @@ function parseUsptoMarkup(value) {
   }
 }
 
+function wrapTextWithFlags(text, flags) {
+  if (!text) return ''
+  let out = text
+  if (flags.bold) out = `**${out}**`
+  if (flags.underline) out = `__${out}__`
+  if (flags.strike) out = `~~${out}~~`
+  return out
+}
+
+function htmlNodeToUsptoMarkup(node, flags = { bold: false, underline: false, strike: false }) {
+  if (!node) return ''
+  if (node.nodeType === 3) {
+    return wrapTextWithFlags(node.textContent || '', flags)
+  }
+  if (node.nodeType !== 1) return ''
+
+  const tag = (node.tagName || '').toLowerCase()
+  if (tag === 'br') return '\n'
+
+  const nextFlags = { ...flags }
+  if (tag === 'b' || tag === 'strong') nextFlags.bold = true
+  if (tag === 'u') nextFlags.underline = true
+  if (tag === 's' || tag === 'strike' || tag === 'del') nextFlags.strike = true
+
+  let out = ''
+  Array.from(node.childNodes).forEach((child) => {
+    out += htmlNodeToUsptoMarkup(child, nextFlags)
+  })
+
+  if (tag === 'div' || tag === 'p' || tag === 'li') {
+    out += '\n'
+  }
+  return out
+}
+
+function htmlToUsptoMarkup(html) {
+  if (!html) return ''
+  const doc = new DOMParser().parseFromString(html, 'text/html')
+  let out = ''
+  Array.from(doc.body.childNodes).forEach((node) => {
+    out += htmlNodeToUsptoMarkup(node)
+  })
+  return out.replace(/\n{3,}/g, '\n\n').trimEnd()
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function usptoMarkupToHtml(markup) {
+  let out = escapeHtml(markup)
+  out = out.replace(/~~([^~]+)~~/g, '<s>$1</s>')
+  out = out.replace(/__([^_]+)__/g, '<u>$1</u>')
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+  out = out.replace(/\n/g, '<br>')
+  return `<div>${out}</div>`
+}
+
 export default function ActionsOverlay({ sheetName }) {
   const { workbook, setCell } = useWorkbookStore((state) => ({
     workbook: state.workbook,
@@ -290,6 +353,62 @@ export default function ActionsOverlay({ sheetName }) {
       if (!nextEl) return
       nextEl.focus()
       nextEl.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
+  const replaceSelectionInDraft = (current, start, end, insertion) => {
+    return `${current.slice(0, start)}${insertion}${current.slice(end)}`
+  }
+
+  const onUsptoPaste = (event, row, label, a1) => {
+    const clipboard = event.clipboardData
+    if (!clipboard) return
+
+    const html = clipboard.getData('text/html')
+    const text = clipboard.getData('text/plain')
+    const insertion = html ? htmlToUsptoMarkup(html) : text
+    if (!insertion) return
+
+    event.preventDefault()
+    const el = editorRefs.current[a1]
+    const current = getBroadestDraftValue(a1, ws ? getCellByA1(ws, a1) : '')
+    const start = el?.selectionStart ?? current.length
+    const end = el?.selectionEnd ?? current.length
+    const nextValue = replaceSelectionInDraft(current, start, end, insertion)
+    commitBroadestDraft(row, label, a1, nextValue, true)
+
+    const nextCursor = start + insertion.length
+    requestAnimationFrame(() => {
+      const nextEl = editorRefs.current[a1]
+      if (!nextEl) return
+      nextEl.focus()
+      nextEl.setSelectionRange(nextCursor, nextCursor)
+    })
+  }
+
+  const onUsptoCopyOrCut = (event, row, label, a1, isCut) => {
+    const clipboard = event.clipboardData
+    const el = editorRefs.current[a1]
+    if (!clipboard || !el) return
+
+    const current = getBroadestDraftValue(a1, ws ? getCellByA1(ws, a1) : '')
+    const start = el.selectionStart ?? 0
+    const end = el.selectionEnd ?? start
+    if (end <= start) return
+
+    const selected = current.slice(start, end)
+    clipboard.setData('text/plain', selected)
+    clipboard.setData('text/html', usptoMarkupToHtml(selected))
+    event.preventDefault()
+
+    if (!isCut) return
+    const nextValue = replaceSelectionInDraft(current, start, end, '')
+    commitBroadestDraft(row, label, a1, nextValue, true)
+    requestAnimationFrame(() => {
+      const nextEl = editorRefs.current[a1]
+      if (!nextEl) return
+      nextEl.focus()
+      nextEl.setSelectionRange(start, start)
     })
   }
 
@@ -507,6 +626,18 @@ export default function ActionsOverlay({ sheetName }) {
                           rows={6}
                           ref={(el) => {
                             if (showUsptoToolbar) editorRefs.current[a1] = el
+                          }}
+                          onPaste={(event) => {
+                            if (!showUsptoToolbar) return
+                            onUsptoPaste(event, row, label, a1)
+                          }}
+                          onCopy={(event) => {
+                            if (!showUsptoToolbar) return
+                            onUsptoCopyOrCut(event, row, label, a1, false)
+                          }}
+                          onCut={(event) => {
+                            if (!showUsptoToolbar) return
+                            onUsptoCopyOrCut(event, row, label, a1, true)
                           }}
                           className="w-full rounded-xl border border-slate-600 bg-slate-900 px-3 py-2 text-slate-100"
                         />
