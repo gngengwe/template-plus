@@ -1,4 +1,4 @@
-﻿import JSZip from 'jszip'
+import JSZip from 'jszip'
 import * as XLSX from 'xlsx'
 
 const XML_NS = 'http://www.w3.org/XML/1998/namespace'
@@ -150,6 +150,54 @@ function setInlineString(cellNode, value) {
   cellNode.appendChild(isNode)
 }
 
+function setInlineRichText(cellNode, runs) {
+  clearCellValueNodes(cellNode)
+  cellNode.setAttribute('t', 'inlineStr')
+
+  const ns = cellNode.namespaceURI || cellNode.ownerDocument.documentElement?.namespaceURI || null
+  const isNode = cellNode.ownerDocument.createElementNS(ns, 'is')
+
+  const normalizedRuns = Array.isArray(runs)
+    ? runs.filter((run) => run && typeof run.text === 'string' && run.text.length > 0)
+    : []
+
+  if (!normalizedRuns.length) {
+    const tNode = cellNode.ownerDocument.createElementNS(ns, 't')
+    tNode.textContent = ''
+    isNode.appendChild(tNode)
+    cellNode.appendChild(isNode)
+    return
+  }
+
+  normalizedRuns.forEach((run) => {
+    const rNode = cellNode.ownerDocument.createElementNS(ns, 'r')
+    const rPrNode = cellNode.ownerDocument.createElementNS(ns, 'rPr')
+
+    if (run.bold) {
+      rPrNode.appendChild(cellNode.ownerDocument.createElementNS(ns, 'b'))
+    }
+    if (run.underline) {
+      rPrNode.appendChild(cellNode.ownerDocument.createElementNS(ns, 'u'))
+    }
+    if (run.strike) {
+      rPrNode.appendChild(cellNode.ownerDocument.createElementNS(ns, 'strike'))
+    }
+    if (rPrNode.childNodes.length > 0) {
+      rNode.appendChild(rPrNode)
+    }
+
+    const tNode = cellNode.ownerDocument.createElementNS(ns, 't')
+    if (/^\s|\s$|\n/.test(run.text)) {
+      tNode.setAttributeNS(XML_NS, 'xml:space', 'preserve')
+    }
+    tNode.textContent = run.text
+    rNode.appendChild(tNode)
+    isNode.appendChild(rNode)
+  })
+
+  cellNode.appendChild(isNode)
+}
+
 function toExcelDateSerial(rawValue) {
   const d = rawValue instanceof Date ? rawValue : new Date(rawValue)
   if (Number.isNaN(d.getTime())) return null
@@ -173,7 +221,7 @@ async function getStyleIds(zip) {
     styleSheet.appendChild(cellXfs)
   }
 
-  const xfs = Array.from(cellXfs.getElementsByTagName('xf'))
+  let xfs = Array.from(cellXfs.getElementsByTagName('xf'))
   const existingIdx = xfs.findIndex((xf) => {
     const align = xf.getElementsByTagName('alignment')[0]
     if (!align) return false
@@ -184,40 +232,66 @@ async function getStyleIds(zip) {
     )
   })
 
-  if (existingIdx >= 0) {
-    return { actionsEntry: existingIdx }
+  let actionsEntryId = existingIdx
+
+  if (actionsEntryId < 0) {
+    const baseXf = xfs[0]
+    const newXf = baseXf ? baseXf.cloneNode(true) : doc.createElementNS(ns, 'xf')
+    if (!newXf.getAttribute('numFmtId')) newXf.setAttribute('numFmtId', '0')
+    if (!newXf.getAttribute('fontId')) newXf.setAttribute('fontId', '0')
+    if (!newXf.getAttribute('fillId')) newXf.setAttribute('fillId', '0')
+    if (!newXf.getAttribute('borderId')) newXf.setAttribute('borderId', '0')
+    if (!newXf.getAttribute('xfId')) newXf.setAttribute('xfId', '0')
+    newXf.setAttribute('applyAlignment', '1')
+    newXf.setAttribute('fontId', '0')
+
+    Array.from(newXf.getElementsByTagName('alignment')).forEach((node) => newXf.removeChild(node))
+
+    const alignment = doc.createElementNS(ns, 'alignment')
+    alignment.setAttribute('horizontal', 'general')
+    alignment.setAttribute('vertical', 'top')
+    alignment.setAttribute('wrapText', '1')
+    newXf.appendChild(alignment)
+
+    cellXfs.appendChild(newXf)
+    cellXfs.setAttribute('count', String(cellXfs.getElementsByTagName('xf').length))
+    xfs = Array.from(cellXfs.getElementsByTagName('xf'))
+    actionsEntryId = xfs.length - 1
   }
 
-  const baseXf = xfs[0]
-  const newXf = baseXf ? baseXf.cloneNode(true) : doc.createElementNS(ns, 'xf')
-  if (!newXf.getAttribute('numFmtId')) newXf.setAttribute('numFmtId', '0')
-  if (!newXf.getAttribute('fontId')) newXf.setAttribute('fontId', '0')
-  if (!newXf.getAttribute('fillId')) newXf.setAttribute('fillId', '0')
-  if (!newXf.getAttribute('borderId')) newXf.setAttribute('borderId', '0')
-  if (!newXf.getAttribute('xfId')) newXf.setAttribute('xfId', '0')
-  newXf.setAttribute('applyAlignment', '1')
-  newXf.setAttribute('fontId', '0')
+  xfs = Array.from(cellXfs.getElementsByTagName('xf'))
+  let actionsDateId = xfs.findIndex((xf) => {
+    const numFmtId = xf.getAttribute('numFmtId')
+    const align = xf.getElementsByTagName('alignment')[0]
+    return (
+      numFmtId === '14' &&
+      align &&
+      (align.getAttribute('horizontal') || '').toLowerCase() === 'general' &&
+      (align.getAttribute('vertical') || '').toLowerCase() === 'top' &&
+      align.getAttribute('wrapText') === '1'
+    )
+  })
 
-  Array.from(newXf.getElementsByTagName('alignment')).forEach((node) => newXf.removeChild(node))
+  if (actionsDateId < 0) {
+    const baseXf = xfs[actionsEntryId] || xfs[0] || doc.createElementNS(ns, 'xf')
+    const dateXf = baseXf.cloneNode(true)
+    dateXf.setAttribute('numFmtId', '14')
+    dateXf.setAttribute('applyNumberFormat', '1')
+    dateXf.setAttribute('applyAlignment', '1')
+    cellXfs.appendChild(dateXf)
+    cellXfs.setAttribute('count', String(cellXfs.getElementsByTagName('xf').length))
+    actionsDateId = cellXfs.getElementsByTagName('xf').length - 1
+  }
 
-  const alignment = doc.createElementNS(ns, 'alignment')
-  alignment.setAttribute('horizontal', 'general')
-  alignment.setAttribute('vertical', 'top')
-  alignment.setAttribute('wrapText', '1')
-  newXf.appendChild(alignment)
-
-  cellXfs.appendChild(newXf)
-  cellXfs.setAttribute('count', String(cellXfs.getElementsByTagName('xf').length))
-
-  const newIdx = cellXfs.getElementsByTagName('xf').length - 1
   zip.file('xl/styles.xml', serializeXml(doc))
-  return { actionsEntry: newIdx }
+  return { actionsEntry: actionsEntryId, actionsDate: actionsDateId }
 }
 
 function patchCell(cellNode, edit, styleIds) {
   const value = edit?.v
   const type = edit?.t
   const styleKey = edit?.styleKey
+  const richTextRuns = edit?.r
   const styleId = styleKey ? styleIds?.[styleKey] : null
 
   if (styleId !== null && styleId !== undefined) {
@@ -226,6 +300,11 @@ function patchCell(cellNode, edit, styleIds) {
 
   if (isBlankValue(value)) {
     setBlank(cellNode)
+    return
+  }
+
+  if (Array.isArray(richTextRuns) && richTextRuns.length > 0) {
+    setInlineRichText(cellNode, richTextRuns)
     return
   }
 
@@ -333,3 +412,4 @@ export async function patchWorkbookArrayBuffer(originalArrayBuffer, workbook, ed
 
   return zip.generateAsync({ type: 'arraybuffer' })
 }
+

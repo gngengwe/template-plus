@@ -83,7 +83,7 @@ const actions = {
     setState({ mode })
   },
 
-  setCell(sheetName, a1, value) {
+  setCell(sheetName, a1, value, options = {}) {
     if (!state.workbook) return
     const ws = getSheet(state.workbook, sheetName)
     if (!ws) return
@@ -96,8 +96,9 @@ const actions = {
       ...prevSheetEdits,
       [updatedA1]: {
         v: cell.v ?? '',
-        t: cell.t ?? 's',
-        styleKey: sheetName === 'Actions' ? 'actionsEntry' : null,
+        t: options.forceType || cell.t || 's',
+        styleKey: options.styleKey ?? (sheetName === 'Actions' ? 'actionsEntry' : null),
+        r: Array.isArray(options.richTextRuns) ? options.richTextRuns : null,
       },
     }
 
