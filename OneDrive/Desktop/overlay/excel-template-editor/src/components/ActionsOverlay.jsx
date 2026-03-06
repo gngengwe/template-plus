@@ -121,12 +121,12 @@ function getColumnLetter(columnNumber) {
   return out
 }
 
-function isBroadestClaimField(label, row) {
+function isClaimRelatedField(label, row) {
   const text = String(label || '').toLowerCase()
-  if ((text.includes('broadest') && text.includes('claim')) || /broadest.*claim|claim.*broadest/i.test(text)) {
+  if (text.includes('claim')) {
     return true
   }
-  // Template fallback: the broadest-claim prompt is typically row 6 in Actions.
+  // Template fallback: broadest-claim prompt is typically row 6 in Actions.
   return Number(row) === 6
 }
 
@@ -250,7 +250,6 @@ export default function ActionsOverlay({ sheetName }) {
 
   const [stageKey, setStageKey] = useState(stageOptions[0]?.key ?? DEFAULT_STAGES[0].key)
   const [showContinuationForAll, setShowContinuationForAll] = useState(false)
-  const [showUsptoToolsForAllLongFields, setShowUsptoToolsForAllLongFields] = useState(false)
   const [copyFromStageKey, setCopyFromStageKey] = useState(stageOptions[0]?.key ?? DEFAULT_STAGES[0].key)
   const [richDraftByA1, setRichDraftByA1] = useState({})
   const editorRefs = useRef({})
@@ -290,7 +289,7 @@ export default function ActionsOverlay({ sheetName }) {
       return
     }
 
-    if (isBroadestClaimField(rowLabel, row) || useUsptoMarkup) {
+    if (isClaimRelatedField(rowLabel, row) || useUsptoMarkup) {
       const parsedMarkup = parseUsptoMarkup(nextValue)
       setCell(sheetName, a1, parsedMarkup.plainText, { richTextRuns: parsedMarkup.runs })
       return
@@ -490,15 +489,6 @@ export default function ActionsOverlay({ sheetName }) {
           Show continuation proposal for this stage
         </label>
 
-        <label className="flex items-center gap-2 text-sm text-slate-300">
-          <input
-            type="checkbox"
-            checked={showUsptoToolsForAllLongFields}
-            onChange={(event) => setShowUsptoToolsForAllLongFields(event.target.checked)}
-          />
-          Show USPTO tools on all long fields
-        </label>
-
         {visibleSections.map((section) => (
           <div id={`section-${section.key}`} key={section.key} className="rounded-xl border border-slate-700 bg-slate-900/70 p-3 shadow-soft">
             <h3 className="mb-3 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 font-['Sora'] text-sm font-semibold uppercase tracking-wide text-slate-200">
@@ -512,8 +502,8 @@ export default function ActionsOverlay({ sheetName }) {
                 const rawValue = ws ? getCellByA1(ws, a1) : ''
                 const parsed = TRIAD_SET.has(row) ? parseRatingText(rawValue) : null
                 const kind = inputKindForRow(row)
-                const isBroadestClaim = isBroadestClaimField(label, row)
-                const showUsptoToolbar = kind === 'long' && (isBroadestClaim || showUsptoToolsForAllLongFields)
+                const isClaimRelated = isClaimRelatedField(label, row)
+                const showUsptoToolbar = kind === 'long' && isClaimRelated
                 const baseValue = parsed
                   ? parsed.text
                   : showUsptoToolbar
