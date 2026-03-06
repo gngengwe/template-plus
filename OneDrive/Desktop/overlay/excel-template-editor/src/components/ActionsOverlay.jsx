@@ -121,8 +121,13 @@ function getColumnLetter(columnNumber) {
   return out
 }
 
-function isBroadestClaimLabel(label) {
-  return /broadest\s+claim/i.test(String(label || ''))
+function isBroadestClaimField(label, row) {
+  const text = String(label || '').toLowerCase()
+  if ((text.includes('broadest') && text.includes('claim')) || /broadest.*claim|claim.*broadest/i.test(text)) {
+    return true
+  }
+  // Template fallback: the broadest-claim prompt is typically row 6 in Actions.
+  return Number(row) === 6
 }
 
 function parseUsptoMarkup(value) {
@@ -221,7 +226,7 @@ export default function ActionsOverlay({ sheetName }) {
       return
     }
 
-    if (isBroadestClaimLabel(rowLabel)) {
+    if (isBroadestClaimField(rowLabel, row)) {
       const parsedMarkup = parseUsptoMarkup(nextValue)
       setCell(sheetName, a1, parsedMarkup.plainText, { richTextRuns: parsedMarkup.runs })
       return
@@ -378,7 +383,7 @@ export default function ActionsOverlay({ sheetName }) {
                 const rawValue = ws ? getCellByA1(ws, a1) : ''
                 const parsed = TRIAD_SET.has(row) ? parseRatingText(rawValue) : null
                 const kind = inputKindForRow(row)
-                const isBroadestClaim = isBroadestClaimLabel(label)
+                const isBroadestClaim = isBroadestClaimField(label, row)
                 const baseValue = parsed
                   ? parsed.text
                   : isBroadestClaim
